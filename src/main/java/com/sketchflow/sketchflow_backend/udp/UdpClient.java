@@ -34,5 +34,21 @@ public class UdpClient {
         } catch (Exception e) {
             logger.severe("Error in UDP Client: " + e.getMessage());
         }
+
+        // Listen for broadcast messages
+        new Thread(() -> {
+            try (DatagramSocket listenSocket = new DatagramSocket(9877)) { // Listening on a different port
+                byte[] buffer = new byte[1024];
+                DatagramPacket receivePacket = new DatagramPacket(buffer, buffer.length);
+
+                while (true) {
+                    listenSocket.receive(receivePacket);
+                    String broadcastMessage = new String(receivePacket.getData(), 0, receivePacket.getLength(), StandardCharsets.UTF_8);
+                    logger.info("Received broadcast message: " + broadcastMessage);
+                }
+            } catch (Exception e) {
+                logger.severe("Error in listening for broadcast messages: " + e.getMessage());
+            }
+        }).start();
     }
 }

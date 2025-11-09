@@ -78,4 +78,11 @@ public class UdpServer {
 
     public void sendNotification(byte[] payload) {
     }
+
+    // Add a method to trigger broadcasting
+    public void triggerBroadcast(String message) {
+        byte[] data = message.getBytes(StandardCharsets.UTF_8);
+        broadcast(data);
+        logger.info("Triggered broadcast with message: " + message);
+    }
 }
