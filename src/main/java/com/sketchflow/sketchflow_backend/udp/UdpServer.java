@@ -77,6 +77,8 @@ public class UdpServer {
     }
 
     public void sendNotification(byte[] payload) {
+        // Placeholder for future implementation
+        logger.info("sendNotification called with payload of size: " + payload.length);
     }
 
     // Add a method to trigger broadcasting
@@ -84,5 +86,9 @@ public class UdpServer {
         byte[] data = message.getBytes(StandardCharsets.UTF_8);
         broadcast(data);
         logger.info("Triggered broadcast with message: " + message);
+    }
+
+    public DatagramSocket getSocket() {
+        return socket;
     }
 }
