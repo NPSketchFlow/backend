@@ -1,13 +1,47 @@
-import socket, zlib, json
+import socket
+import json
+import time
+import argparse
+
+DEFAULT_LOCAL_PORT = 9878
+DEFAULT_SERVER_HOST = '127.0.0.1'
+DEFAULT_SERVER_PORT = 9876
+
+parser = argparse.ArgumentParser(description='UDP listener that binds, sends heartbeat, then listens')
+parser.add_argument('--local-port', type=int, default=DEFAULT_LOCAL_PORT)
+parser.add_argument('--server-host', default=DEFAULT_SERVER_HOST)
+parser.add_argument('--server-port', type=int, default=DEFAULT_SERVER_PORT)
+args = parser.parse_args()
+
+LISTEN_HOST = '127.0.0.1'
+LISTEN_PORT = args.local_port
+SERVER_HOST = args.server_host
+SERVER_PORT = args.server_port
+
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.bind(("127.0.0.1", 9878))
-print("Client1 listening on 127.0.0.1:9878")
+try:
+    s.bind((LISTEN_HOST, LISTEN_PORT))
+except OSError as e:
+    print(f"Failed to bind {LISTEN_HOST}:{LISTEN_PORT}: {e}")
+    raise
+
+print(f"Client2 listening on {LISTEN_HOST}:{LISTEN_PORT}")
+
+heartbeat = json.dumps({
+    "type": "HEARTBEAT",
+    "userId": f"client2-{LISTEN_PORT}",
+    "timestamp": int(time.time() * 1000)
+}).encode('utf-8')
+try:
+    s.sendto(heartbeat, (SERVER_HOST, SERVER_PORT))
+    print(f"Client2 sent heartbeat to {SERVER_HOST}:{SERVER_PORT} from {LISTEN_HOST}:{LISTEN_PORT}")
+except Exception as e:
+    print(f"Client2 failed to send heartbeat: {e}")
+
 while True:
     data, addr = s.recvfrom(65536)
-    chk = int.from_bytes(data[:4], 'big')
-    payload = data[4:]
     try:
-        msg = json.loads(payload.decode())
-    except:
-        msg = payload.decode(errors="ignore")
-    print("[Client1] From", addr, "Checksum", chk, "Payload:", msg)
+        msg = json.loads(data.decode('utf-8'))
+        print(f"[Client2] From {addr} Payload JSON: {msg}")
+    except Exception:
+        print(f"[Client2] From {addr} Raw: {data!r}")

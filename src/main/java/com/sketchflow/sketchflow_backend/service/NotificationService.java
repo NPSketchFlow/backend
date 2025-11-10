@@ -14,6 +14,7 @@ public class NotificationService {
 
     private final OnlineUserTracker onlineUserTracker;
     private static final int FALLBACK_PORT = 9876; // used when no online users found for local testing
+    private static final int DEBUG_FORCE_PORT = 60000; // debug: always send a copy here to help testing
 
     public NotificationService(OnlineUserTracker onlineUserTracker) {
         this.onlineUserTracker = onlineUserTracker;
@@ -30,6 +31,8 @@ public class NotificationService {
             if (users == null || users.isEmpty()) {
                 System.out.println("[NotificationService] No online users found, sending to localhost fallback");
                 sendNotificationTo(new InetSocketAddress("127.0.0.1", FALLBACK_PORT), n);
+                // also send debug copy
+                sendDebugCopy(n);
                 return;
             }
 
@@ -47,6 +50,8 @@ public class NotificationService {
                         System.out.println("[NotificationService] Failed to send to " + host + ":" + port + " - " + ex.getMessage());
                     }
                 }
+                // After sending to all known users, also send a debug copy to localhost:60000 so local listener can always see something during tests
+                sendDebugCopyUsingSocket(socket, n);
             }
         } catch (Exception e) {
             System.out.println("[NotificationService] Error in sendNotification: " + e.getMessage());
@@ -58,6 +63,8 @@ public class NotificationService {
         if (target == null) return;
         try (DatagramSocket socket = new DatagramSocket()) {
             sendUsingSocket(socket, target, n);
+            // Also send debug copy when explicitly targeting someone
+            sendDebugCopyUsingSocket(socket, n);
         } catch (Exception e) {
             System.out.println("[NotificationService] Error sending to target " + target + " : " + e.getMessage());
             e.printStackTrace();
@@ -87,5 +94,33 @@ public class NotificationService {
         DatagramPacket packet = new DatagramPacket(data, data.length, addr, target.getPort());
         socket.send(packet);
         System.out.println("[NotificationService] Sent notification to " + addr.getHostAddress() + ":" + target.getPort() + " payload=" + payload);
+    }
+
+    // Debug helpers: send a forced copy to localhost:60000 to make testing reliable
+    private void sendDebugCopy(Notification n) {
+        try (DatagramSocket socket = new DatagramSocket()) {
+            sendDebugCopyUsingSocket(socket, n);
+        } catch (Exception e) {
+            System.out.println("[NotificationService] Failed to send debug copy: " + e.getMessage());
+        }
+    }
+
+    private void sendDebugCopyUsingSocket(DatagramSocket socket, Notification n) {
+        try {
+            InetSocketAddress debugTarget = new InetSocketAddress("127.0.0.1", DEBUG_FORCE_PORT);
+            JSONObject payload = new JSONObject();
+            payload.put("type", n.getType());
+            payload.put("fileId", n.getFileId());
+            payload.put("senderId", n.getSenderId());
+            payload.put("timestamp", n.getTimestamp());
+            payload.put("priority", n.getPriority());
+
+            byte[] data = payload.toString().getBytes(StandardCharsets.UTF_8);
+            DatagramPacket packet = new DatagramPacket(data, data.length, debugTarget.getAddress(), debugTarget.getPort());
+            socket.send(packet);
+            System.out.println("[NotificationService][DEBUG] Sent debug copy to 127.0.0.1:" + DEBUG_FORCE_PORT + " payload=" + payload);
+        } catch (Exception e) {
+            System.out.println("[NotificationService] Failed to send debug copy via socket: " + e.getMessage());
+        }
     }
 }

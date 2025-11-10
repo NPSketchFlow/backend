@@ -1,5 +1,6 @@
 package com.sketchflow.sketchflow_backend.udp;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sketchflow.sketchflow_backend.metrics.NetworkMetrics;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
@@ -8,6 +9,9 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -23,6 +27,8 @@ public class UdpServer {
     private DatagramSocket socket;
     private final Set<InetSocketAddress> clients = ConcurrentHashMap.newKeySet();
     private final ExecutorService executor = Executors.newCachedThreadPool();
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Value("${sketchflow.udp.port:9876}")
     private int udpPort;
@@ -49,35 +55,46 @@ public class UdpServer {
                         DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                         socket.receive(packet);
 
-                        // Decode packet
+                        // Copy exact payload bytes
                         byte[] data = new byte[packet.getLength()];
                         System.arraycopy(packet.getData(), packet.getOffset(), data, 0, packet.getLength());
                         int checksum = PacketUtils.crc32(data);
                         InetAddress senderAddress = packet.getAddress();
                         int senderPort = packet.getPort();
 
-                        logger.info("Received packet from " + senderAddress + ":" + senderPort + ", checksum: " + checksum);
+                        String payloadText = new String(data, StandardCharsets.UTF_8).trim();
+                        logger.info("Received packet from " + senderAddress + ":" + senderPort + ", checksum: " + checksum + ", payload='" + payloadText + "'");
 
-                        // Add sender to known clients
+                        // Add sender to known clients set (we still store the address)
                         InetSocketAddress clientAddress = new InetSocketAddress(senderAddress, senderPort);
                         clients.add(clientAddress);
+                        logger.info("Known clients count=" + clients.size());
 
                         // Update metrics
                         if (networkMetrics != null) networkMetrics.incrementPacketsReceived();
 
-                        // If payload appears to be a heartbeat JSON containing userId and timestamp, try to update tracker
+                        // Try to parse JSON payload and handle heartbeat messages robustly
                         try {
-                            // naive parse: look for "userId" and "timestamp" strings
-                            String payload = new String(data, StandardCharsets.UTF_8);
-                            if (payload.contains("userId") && payload.contains("timestamp")) {
-                                // crude parsing to extract values
-                                String userId = extractJsonField(payload, "userId");
-                                String tsStr = extractJsonField(payload, "timestamp");
+                            Map<String, Object> json = OBJECT_MAPPER.readValue(payloadText, Map.class);
+                            Object typeObj = json.get("type");
+                            String type = typeObj != null ? String.valueOf(typeObj) : null;
+                            if ("HEARTBEAT".equalsIgnoreCase(type)) {
+                                String userId = json.get("userId") != null ? String.valueOf(json.get("userId")) : "unknown";
                                 long clientTs = System.currentTimeMillis();
-                                try { clientTs = Long.parseLong(tsStr); } catch (Exception ignored) {}
-                                if (onlineUserTracker != null) onlineUserTracker.onHeartbeat(clientAddress, userId, clientTs);
+                                try {
+                                    Object tsVal = json.get("timestamp");
+                                    if (tsVal != null) clientTs = Long.parseLong(String.valueOf(tsVal));
+                                } catch (Exception ignored) {}
+
+                                if (onlineUserTracker != null) {
+                                    onlineUserTracker.onHeartbeat(clientAddress, userId, clientTs);
+                                    logger.info("Registered heartbeat: user='" + userId + "' at " + clientAddress);
+                                }
                             }
-                        } catch (Exception ignored) {}
+                        } catch (Exception e) {
+                            // not a JSON heartbeat or parse failed; log at info to help debugging
+                            logger.info("Payload is not a valid HEARTBEAT JSON or parse failed: " + e.getMessage());
+                        }
 
                         // Send ACK
                         String ackMessage = "ACK";
@@ -125,26 +142,13 @@ public class UdpServer {
         return socket;
     }
 
-    // Very small helper to extract simple JSON string/number fields (not robust) used only for heartbeat basic parsing
-    private String extractJsonField(String json, String field) {
-        String needle = "\"" + field + "\"";
-        int idx = json.indexOf(needle);
-        if (idx == -1) return null;
-        int colon = json.indexOf(':', idx);
-        if (colon == -1) return null;
-        int start = colon + 1;
-        // skip spaces
-        while (start < json.length() && Character.isWhitespace(json.charAt(start))) start++;
-        char c = json.charAt(start);
-        if (c == '"') {
-            int end = json.indexOf('"', start + 1);
-            if (end == -1) return null;
-            return json.substring(start + 1, end);
-        } else {
-            // number
-            int end = start;
-            while (end < json.length() && (Character.isDigit(json.charAt(end)) || json.charAt(end) == '-')) end++;
-            return json.substring(start, end);
+    // Return a snapshot copy of known clients for debugging / REST endpoints
+    public List<String> getKnownClients() {
+        List<String> list = new ArrayList<>();
+        for (InetSocketAddress addr : clients) {
+            list.add(addr.getAddress().getHostAddress() + ":" + addr.getPort());
         }
+        return list;
     }
+
 }
