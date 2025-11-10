@@ -8,19 +8,26 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/voice")
 public class VoiceController {
 
     private static final String UPLOAD_DIR = "voice-data/uploads";
-    private static final String DOWNLOAD_DIR = "voice-data/downloads";
-    private UdpServer udpServer;
+    private final UdpServer udpServer;
+
+    public VoiceController(UdpServer udpServer) {
+        this.udpServer = udpServer;
+    }
 
     // Endpoint for uploading voice files
     @PostMapping("/upload")
@@ -39,27 +46,34 @@ public class VoiceController {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid file name.");
             }
 
-            // Save the file using NIO FileChannel
+            // Save the file using NIO FileChannel (streaming without loading whole file into memory)
             Path filePath = uploadPath.resolve(originalFilename);
-            try (var inputStream = file.getInputStream();
-                 var fileChannel = Files.newByteChannel(filePath, StandardOpenOption.CREATE, StandardOpenOption.WRITE)) {
-                var buffer = java.nio.ByteBuffer.allocate(1024);
-                int bytesRead;
-                while ((bytesRead = inputStream.read(buffer.array())) != -1) {
-                    buffer.limit(bytesRead);
-                    fileChannel.write(buffer);
+            try (InputStream inputStream = file.getInputStream();
+                 ReadableByteChannel inChannel = Channels.newChannel(inputStream);
+                 var fileChannel = Files.newByteChannel(filePath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
+                ByteBuffer buffer = ByteBuffer.allocateDirect(16 * 1024);
+                long total = 0;
+                while (inChannel.read(buffer) != -1) {
+                    buffer.flip();
+                    while (buffer.hasRemaining()) {
+                        fileChannel.write(buffer);
+                    }
+                    total += buffer.position();
                     buffer.clear();
                 }
             }
 
-            // Publish a "NEW_VOICE" notification
+            // Publish a "NEW_VOICE" notification (simple JSON metadata)
             String metadata = String.format("{\"fileId\":\"%s\",\"senderId\":\"%s\",\"timestamp\":%d}",
                     originalFilename, senderId, System.currentTimeMillis());
-            udpServer.broadcast(metadata.getBytes(StandardCharsets.UTF_8));
+            // udpServer may be null if not available in tests; guard null
+            if (udpServer != null) {
+                udpServer.broadcast(metadata.getBytes(StandardCharsets.UTF_8));
+            }
 
             return ResponseEntity.ok("File uploaded successfully: " + originalFilename);
         } catch (IOException e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload file.");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to upload file. " + e.getMessage());
         }
     }
 
@@ -67,14 +81,12 @@ public class VoiceController {
     @GetMapping("/download/{filename}")
     public ResponseEntity<InputStreamResource> downloadVoice(@PathVariable("filename") String filename) {
         try {
-            // Ensure the download directory exists
-            Path downloadPath = Paths.get(DOWNLOAD_DIR);
-            if (!Files.exists(downloadPath)) {
-                Files.createDirectories(downloadPath);
+            Path uploadPath = Paths.get(UPLOAD_DIR);
+            if (!Files.exists(uploadPath)) {
+                Files.createDirectories(uploadPath);
             }
 
-            // Read the file using NIO FileChannel
-            Path filePath = downloadPath.resolve(filename);
+            Path filePath = uploadPath.resolve(filename);
             if (!Files.exists(filePath)) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
             }
@@ -85,6 +97,7 @@ public class VoiceController {
 
             return ResponseEntity.ok()
                     .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                    .contentLength(Files.size(filePath))
                     .body(resource);
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);

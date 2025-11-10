@@ -8,6 +8,10 @@ public class Notification {
     private long timestamp;
     private int priority;
 
+    // No-arg constructor added to allow frameworks and existing code to instantiate then set properties
+    public Notification() {
+    }
+
     public Notification(String type, String fileId, String senderId, long timestamp, int priority) {
         this.type = type;
         this.fileId = fileId;

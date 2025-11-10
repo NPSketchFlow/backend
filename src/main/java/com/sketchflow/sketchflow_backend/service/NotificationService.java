@@ -1,57 +1,91 @@
 package com.sketchflow.sketchflow_backend.service;
 
 import com.sketchflow.sketchflow_backend.model.Notification;
-import com.sketchflow.sketchflow_backend.udp.UdpServer;
-import com.sketchflow.sketchflow_backend.udp.UdpRetransmissionHandler;
-import com.sketchflow.sketchflow_backend.udp.PacketUtils;
-import java.net.InetSocketAddress;
-import java.util.logging.Logger;
+import com.sketchflow.sketchflow_backend.udp.OnlineUserTracker;
+import org.json.JSONObject;
+import org.springframework.stereotype.Service;
 
+import java.net.*;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+@Service
 public class NotificationService {
 
-    private static final Logger logger = Logger.getLogger(NotificationService.class.getName());
+    private final OnlineUserTracker onlineUserTracker;
+    private static final int FALLBACK_PORT = 9876; // used when no online users found for local testing
 
-    private final UdpServer udpServer;
-    private final UdpRetransmissionHandler retransmissionHandler;
-    private int priority = 1; // Default priority
-
-    public NotificationService(UdpServer udpServer, UdpRetransmissionHandler retransmissionHandler) {
-        this.udpServer = udpServer;
-        this.retransmissionHandler = retransmissionHandler;
-    }
-
-    public void sendNotification(Notification notification) {
-        try {
-            byte[] serializedData = PacketUtils.serialize(notification);
-            udpServer.broadcast(serializedData);
-            logger.info("Notification broadcasted: " + notification);
-        } catch (Exception e) {
-            logger.severe("Failed to broadcast notification: " + e.getMessage());
-        }
-    }
-
-    public void sendNotificationTo(InetSocketAddress target, Notification notification) {
-        try {
-            byte[] serializedData = PacketUtils.serialize(notification);
-            boolean success = retransmissionHandler.sendWithRetransmission(
-                    udpServer.getSocket(),
-                    PacketUtils.createPacket(serializedData, target),
-                    target,
-                    3, // maxRetries
-                    1000 // baseTimeoutMs
-            );
-            if (success) {
-                logger.info("Notification sent to " + target + ": " + notification);
-            } else {
-                logger.warning("Failed to send notification to " + target);
-            }
-        } catch (Exception e) {
-            logger.severe("Error sending notification to " + target + ": " + e.getMessage());
-        }
+    public NotificationService(OnlineUserTracker onlineUserTracker) {
+        this.onlineUserTracker = onlineUserTracker;
     }
 
     public void notifyNewVoice(String fileId, String senderId) {
-        Notification notification = new Notification("NEW_VOICE", fileId, senderId, System.currentTimeMillis(), priority);
-        sendNotification(notification);
+        Notification n = new Notification("NEW_VOICE", fileId, senderId, System.currentTimeMillis(), 1);
+        sendNotification(n);
+    }
+
+    public void sendNotification(Notification n) {
+        try {
+            List<OnlineUserTracker.OnlineUserInfo> users = onlineUserTracker.listOnlineUsers();
+            if (users == null || users.isEmpty()) {
+                System.out.println("[NotificationService] No online users found, sending to localhost fallback");
+                sendNotificationTo(new InetSocketAddress("127.0.0.1", FALLBACK_PORT), n);
+                return;
+            }
+
+            try (DatagramSocket socket = new DatagramSocket()) {
+                socket.setBroadcast(false);
+                for (OnlineUserTracker.OnlineUserInfo u : users) {
+                    if (u == null) continue;
+                    String host = u.getIp();
+                    int port = u.getPort();
+                    if (host == null || port <= 0) continue;
+                    InetSocketAddress target = new InetSocketAddress(host, port);
+                    try {
+                        sendUsingSocket(socket, target, n);
+                    } catch (Exception ex) {
+                        System.out.println("[NotificationService] Failed to send to " + host + ":" + port + " - " + ex.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("[NotificationService] Error in sendNotification: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public void sendNotificationTo(InetSocketAddress target, Notification n) {
+        if (target == null) return;
+        try (DatagramSocket socket = new DatagramSocket()) {
+            sendUsingSocket(socket, target, n);
+        } catch (Exception e) {
+            System.out.println("[NotificationService] Error sending to target " + target + " : " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // Helper that does the actual packet send using the provided socket
+    private void sendUsingSocket(DatagramSocket socket, InetSocketAddress target, Notification n) throws Exception {
+        JSONObject payload = new JSONObject();
+        payload.put("type", n.getType());
+        payload.put("fileId", n.getFileId());
+        payload.put("senderId", n.getSenderId());
+        payload.put("timestamp", n.getTimestamp());
+        payload.put("priority", n.getPriority());
+
+        byte[] data = payload.toString().getBytes(StandardCharsets.UTF_8);
+
+        InetAddress addr;
+        try {
+            addr = InetAddress.getByName(target.getHostString());
+        } catch (Exception e) {
+            // fallback: try ip from target.getAddress()
+            addr = target.getAddress();
+            if (addr == null) throw e;
+        }
+
+        DatagramPacket packet = new DatagramPacket(data, data.length, addr, target.getPort());
+        socket.send(packet);
+        System.out.println("[NotificationService] Sent notification to " + addr.getHostAddress() + ":" + target.getPort() + " payload=" + payload);
     }
 }
