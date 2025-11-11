@@ -36,8 +36,28 @@ public class WhiteboardSessionService {
     private DrawingActionRepository drawingActionRepository;
 
     /**
-     * Create a new whiteboard session asynchronously
+     * Create a new whiteboard session synchronously
+     * This ensures SecurityContext is available during the entire operation
      */
+    public WhiteboardSession createSession(SessionCreateRequest request) {
+        String sessionId = UUID.randomUUID().toString();
+        WhiteboardSession session = new WhiteboardSession(
+            sessionId,
+            request.getName(),
+            request.getCreatedBy(),
+            request.getMaxUsers()
+        );
+
+        WhiteboardSession saved = sessionRepository.save(session);
+        logger.info("Created whiteboard session: " + sessionId + " by user: " + request.getCreatedBy());
+        return saved;
+    }
+
+    /**
+     * Create a new whiteboard session asynchronously
+     * @deprecated Use createSession() instead to avoid SecurityContext issues
+     */
+    @Deprecated
     public CompletableFuture<WhiteboardSession> createSessionAsync(SessionCreateRequest request) {
         return CompletableFuture.supplyAsync(() -> {
             String sessionId = UUID.randomUUID().toString();
@@ -76,8 +96,32 @@ public class WhiteboardSessionService {
     }
 
     /**
-     * Delete session and all associated data
+     * Delete session and all associated data synchronously
      */
+    @Transactional
+    public void deleteSession(String sessionId) {
+        try {
+            // Delete session
+            sessionRepository.deleteById(sessionId);
+
+            // Delete all drawing actions
+            drawingActionRepository.deleteBySessionId(sessionId);
+
+            // Delete active user sessions
+            activeUserSessionRepository.deleteBySessionId(sessionId);
+
+            logger.info("Deleted session and all associated data: " + sessionId);
+        } catch (Exception e) {
+            logger.severe("Error deleting session: " + sessionId + ", error: " + e.getMessage());
+            throw new RuntimeException("Failed to delete session", e);
+        }
+    }
+
+    /**
+     * Delete session and all associated data asynchronously
+     * @deprecated Use deleteSession() instead to avoid SecurityContext issues
+     */
+    @Deprecated
     @Transactional
     public CompletableFuture<Void> deleteSessionAsync(String sessionId) {
         return CompletableFuture.runAsync(() -> {
