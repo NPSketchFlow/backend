@@ -55,11 +55,10 @@
 			<artifactId>spring-boot-starter-websocket</artifactId>
 		</dependency>
 
-		<!-- MongoDB Driver (Updated to stable version) -->
+		<!-- Jackson Java 8 Date/Time Support -->
 		<dependency>
-			<groupId>org.mongodb</groupId>
-			<artifactId>mongodb-driver-sync</artifactId>
-			<version>4.10.2</version> <!-- Updated to a stable version -->
+			<groupId>com.fasterxml.jackson.datatype</groupId>
+			<artifactId>jackson-datatype-jsr310</artifactId>
 		</dependency>
 
 		<!-- Lombok -->
