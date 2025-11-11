@@ -50,6 +50,10 @@ public class FileStorageService {
     }
 
     public String storeFile(MultipartFile file) throws IOException {
+        return storeFile(file, null);
+    }
+
+    public String storeFile(MultipartFile file, String username) throws IOException {
         if (file == null || file.isEmpty()) {
             throw new IOException("Cannot store empty file");
         }
@@ -58,7 +62,10 @@ public class FileStorageService {
         if (originalFilename != null && originalFilename.contains(".")) {
             extension = originalFilename.substring(originalFilename.lastIndexOf("."));
         }
-        String filename = System.currentTimeMillis() + "_" + UUID.randomUUID() + extension;
+
+        // Include username in filename if provided for better organization
+        String filePrefix = username != null ? username + "_" : "";
+        String filename = filePrefix + System.currentTimeMillis() + "_" + UUID.randomUUID() + extension;
         Path targetPath = base.resolve(filename);
         Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
         return "/files/" + filename;
