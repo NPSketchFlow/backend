@@ -5,6 +5,8 @@ import com.sketchflow.sketchflow_backend.dto.LoginRequest;
 import com.sketchflow.sketchflow_backend.dto.RegisterRequest;
 import com.sketchflow.sketchflow_backend.model.User;
 import com.sketchflow.sketchflow_backend.service.AuthService;
+import com.sketchflow.sketchflow_backend.service.ActivityLogService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,10 +23,26 @@ public class AuthController {
     @Autowired
     private AuthService authService;
 
+    @Autowired(required = false)
+    private ActivityLogService activityLogService;
+
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
+    public ResponseEntity<?> register(@RequestBody RegisterRequest request, HttpServletRequest httpRequest) {
         try {
             AuthResponse response = authService.register(request);
+
+            // Log registration activity
+            if (activityLogService != null) {
+                activityLogService.logActivity(
+                    response.getId(),
+                    response.getUsername(),
+                    "REGISTER",
+                    "New user registered",
+                    getClientIp(httpRequest),
+                    "INFO"
+                );
+            }
+
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } catch (RuntimeException e) {
             Map<String, String> error = new HashMap<>();
@@ -34,11 +52,36 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request) {
+    public ResponseEntity<?> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         try {
             AuthResponse response = authService.login(request);
+
+            // Log login activity
+            if (activityLogService != null) {
+                activityLogService.logActivity(
+                    response.getId(),
+                    response.getUsername(),
+                    "LOGIN",
+                    "User logged in successfully",
+                    getClientIp(httpRequest),
+                    "INFO"
+                );
+            }
+
             return ResponseEntity.ok(response);
         } catch (Exception e) {
+            // Log failed login attempt
+            if (activityLogService != null) {
+                activityLogService.logActivity(
+                    "unknown",
+                    request.getUsername(),
+                    "LOGIN_FAILED",
+                    "Failed login attempt",
+                    getClientIp(httpRequest),
+                    "WARNING"
+                );
+            }
+
             Map<String, String> error = new HashMap<>();
             error.put("error", "Invalid username or password");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
@@ -78,6 +121,17 @@ public class AuthController {
                     return ResponseEntity.ok(response);
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Get client IP address from request
+     */
+    private String getClientIp(HttpServletRequest request) {
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+            return xForwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }
 
