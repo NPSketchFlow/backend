@@ -11,6 +11,8 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import com.sketchflow.sketchflow_backend.model.ChatMessage;
+import com.sketchflow.sketchflow_backend.service.ChatService;
 
 import java.io.IOException;
 import java.util.Set;
@@ -43,6 +45,9 @@ public class WhiteboardWebSocketHandler extends TextWebSocketHandler {
 
     @Autowired
     private ActiveUserService activeUserService;
+
+    @Autowired
+    private ChatService chatService;
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -85,6 +90,11 @@ public class WhiteboardWebSocketHandler extends TextWebSocketHandler {
                     case "LEAVE":
                         handleLeaveMessage(session, wsMessage);
                         break;
+
+                    case "CHAT_MESSAGE":
+                        handleChatMessage(session, wsMessage);
+                        break;
+
                     default:
                         logger.warning("Unknown message type: " + messageType);
                 }
@@ -254,6 +264,33 @@ public class WhiteboardWebSocketHandler extends TextWebSocketHandler {
 
         } catch (Exception e) {
             logger.warning("Error handling LEAVE: " + e.getMessage());
+        }
+    }
+    /**
+     * Handle CHAT_MESSAGE - a new chat message from user
+     */
+    private void handleChatMessage(WebSocketSession session, WebSocketMessage message) {
+        try {
+            String sessionId = sessionManager.getWhiteboardSessionId(session);
+            if (sessionId == null) return;
+
+            // 1. Save the message to the database
+            // We save it first, which gives it a timestamp and ID
+            ChatMessage savedMessage = chatService.saveMessage(message, sessionId);
+
+            // 2. Prepare the message for broadcast
+            // We use the server-generated timestamp for consistency
+            message.setTimestamp(System.currentTimeMillis());
+            // We use the username from the saved message for security
+            message.setUsername(savedMessage.getSenderUsername());
+
+            // 3. Broadcast to all users in the session (including the sender)
+            broadcastToSession(sessionId, message, null);
+
+            logger.info("Chat message from " + message.getUserId() + " in session " + sessionId);
+
+        } catch (Exception e) {
+            logger.severe("Error handling CHAT_MESSAGE: " + e.getMessage());
         }
     }
 

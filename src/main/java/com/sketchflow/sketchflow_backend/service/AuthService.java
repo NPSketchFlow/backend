@@ -3,6 +3,7 @@ package com.sketchflow.sketchflow_backend.service;
 import com.sketchflow.sketchflow_backend.dto.AuthResponse;
 import com.sketchflow.sketchflow_backend.dto.LoginRequest;
 import com.sketchflow.sketchflow_backend.dto.RegisterRequest;
+import com.sketchflow.sketchflow_backend.dto.UpdateProfileRequest;
 import com.sketchflow.sketchflow_backend.model.User;
 import com.sketchflow.sketchflow_backend.repository.UserRepository;
 import com.sketchflow.sketchflow_backend.security.JwtTokenProvider;
@@ -120,6 +121,32 @@ public class AuthService {
 
     public Optional<User> getUserByUsername(String username) {
         return userRepository.findByUsername(username);
+    }
+
+    /**
+     * Update the current authenticated user's profile.
+     *
+     * @param request The request containing the new profile data
+     * @return The updated User object
+     */
+    public User updateProfile(UpdateProfileRequest request) {
+        // 1. Get the currently authenticated user
+        User currentUser = getCurrentUser();
+        if (currentUser == null) {
+            throw new RuntimeException("User not authenticated");
+        }
+
+        // 2. Update the fields if they are provided in the request
+        if (request.getFullName() != null && !request.getFullName().isEmpty()) {
+            currentUser.setFullName(request.getFullName());
+        }
+
+        if (request.getAvatar() != null && !request.getAvatar().isEmpty()) {
+            currentUser.setAvatar(request.getAvatar());
+        }
+
+        // 3. Save the updated user back to the database
+        return userRepository.save(currentUser);
     }
 }
 

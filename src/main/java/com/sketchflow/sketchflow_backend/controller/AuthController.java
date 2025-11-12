@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.sketchflow.sketchflow_backend.dto.UpdateProfileRequest;
+import org.springframework.web.bind.annotation.PutMapping;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -54,16 +56,7 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
         }
 
-        Map<String, Object> response = new HashMap<>();
-        response.put("id", user.getId());
-        response.put("username", user.getUsername());
-        response.put("email", user.getEmail());
-        response.put("fullName", user.getFullName());
-        response.put("avatar", user.getAvatar());
-        response.put("roles", user.getRoles());
-        response.put("createdAt", user.getCreatedAt());
-
-        return ResponseEntity.ok(response);
+        return getResponseEntity(user);
     }
 
     @GetMapping("/user/{username}")
@@ -78,6 +71,32 @@ public class AuthController {
                     return ResponseEntity.ok(response);
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+    @PutMapping("/me")
+    public ResponseEntity<?> updateCurrentUserProfile(@RequestBody UpdateProfileRequest request) {
+        try {
+            User updatedUser = authService.updateProfile(request);
+
+            // Return a safe response map, similar to /me
+            return getResponseEntity(updatedUser);
+        } catch (RuntimeException e) {
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+        }
+    }
+
+    private ResponseEntity<?> getResponseEntity(User updatedUser) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", updatedUser.getId());
+        response.put("username", updatedUser.getUsername());
+        response.put("email", updatedUser.getEmail());
+        response.put("fullName", updatedUser.getFullName());
+        response.put("avatar", updatedUser.getAvatar());
+        response.put("roles", updatedUser.getRoles());
+        response.put("createdAt", updatedUser.getCreatedAt());
+
+        return ResponseEntity.ok(response);
     }
 }
 
