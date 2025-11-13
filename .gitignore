@@ -40,3 +40,6 @@ voice-data/
 .env.*
 *.env
 qodana.yaml
+/.vs/
+.vscode
+.DS_Store

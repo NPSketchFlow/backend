@@ -19,6 +19,8 @@ public class WebSocketMessage {
     private DrawingAction.Coordinates coordinates;
     private Long timestamp; // Changed from LocalDateTime to Long (epoch milliseconds)
     private String messageContent;
+    private String receiverUsername;
+    private String token;
     private CursorPosition position;
 
     @Data
