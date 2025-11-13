@@ -1,58 +1,68 @@
 package com.sketchflow.sketchflow_backend.model;
 
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Document(collection = "users")
 public class User {
 
     @Id
-    private String userId;
+    private String id;
+
+    @Indexed(unique = true)
     private String username;
-    private String status;
-    private String ip;
-    private int port;
-    private long lastSeen;
 
-    public User() {}
+    @Indexed(unique = true)
+    private String email;
 
-    public User(String userId, String username, String status, String ip, int port, long lastSeen) {
-        this.userId = userId;
+    private String password; // Encrypted
+
+    private String fullName;
+
+    private String avatar;
+
+    private Set<String> roles = new HashSet<>(); // USER, ADMIN
+
+    private boolean enabled = true;
+
+    private boolean accountNonExpired = true;
+
+    private boolean accountNonLocked = true;
+
+    private boolean credentialsNonExpired = true;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime lastLogin;
+
+    private String lastLoginIp;
+
+    public User(String username, String email, String password, String fullName) {
         this.username = username;
-        this.status = status;
-        this.ip = ip;
-        this.port = port;
-        this.lastSeen = lastSeen;
+        this.email = email;
+        this.password = password;
+        this.fullName = fullName;
+        this.createdAt = LocalDateTime.now();
+        this.roles.add("ROLE_USER");
     }
 
-    public String getUserId() { return userId; }
-    public void setUserId(String userId) { this.userId = userId; }
+    public void addRole(String role) {
+        this.roles.add(role);
+    }
 
-    public String getUsername() { return username; }
-    public void setUsername(String username) { this.username = username; }
-
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
-
-    public String getIp() { return ip; }
-    public void setIp(String ip) { this.ip = ip; }
-
-    public int getPort() { return port; }
-    public void setPort(int port) { this.port = port; }
-
-    public long getLastSeen() { return lastSeen; }
-    public void setLastSeen(long lastSeen) { this.lastSeen = lastSeen; }
-
-    @Override
-    public String toString() {
-        return "User{" +
-                "userId='" + userId + '\'' +
-                ", username='" + username + '\'' +
-                ", status='" + status + '\'' +
-                ", ip='" + ip + '\'' +
-                ", port=" + port +
-                ", lastSeen=" + lastSeen +
-                '}';
+    public void removeRole(String role) {
+        this.roles.remove(role);
     }
 }
 

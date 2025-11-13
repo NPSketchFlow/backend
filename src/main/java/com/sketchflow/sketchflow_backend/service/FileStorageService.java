@@ -9,6 +9,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.AsynchronousFileChannel;
 import java.nio.channels.CompletionHandler;
 import java.nio.file.*;
+import java.util.UUID;
 
 @Service
 public class FileStorageService {
@@ -46,6 +47,37 @@ public class FileStorageService {
 
     public Path resolve(String filename){
         return base.resolve(filename);
+    }
+
+    public String storeFile(MultipartFile file) throws IOException {
+        return storeFile(file, null);
+    }
+
+    public String storeFile(MultipartFile file, String username) throws IOException {
+        if (file == null || file.isEmpty()) {
+            throw new IOException("Cannot store empty file");
+        }
+        String originalFilename = file.getOriginalFilename();
+        String extension = "";
+        if (originalFilename != null && originalFilename.contains(".")) {
+            extension = originalFilename.substring(originalFilename.lastIndexOf("."));
+        }
+
+        // Include username in filename if provided for better organization
+        String filePrefix = username != null ? username + "_" : "";
+        String filename = filePrefix + System.currentTimeMillis() + "_" + UUID.randomUUID() + extension;
+        Path targetPath = base.resolve(filename);
+        Files.copy(file.getInputStream(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+        return "/files/" + filename;
+    }
+
+    public boolean deleteFile(String filename) {
+        try {
+            Path filePath = base.resolve(filename);
+            return Files.deleteIfExists(filePath);
+        } catch (IOException e) {
+            return false;
+        }
     }
 }
 
