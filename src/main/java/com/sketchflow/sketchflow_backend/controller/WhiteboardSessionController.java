@@ -19,7 +19,7 @@ import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/whiteboard/sessions")
-@CrossOrigin(origins = "*")
+// CORS handled by global SecurityConfig
 public class WhiteboardSessionController {
 
     @Autowired

@@ -4,14 +4,13 @@ import com.sketchflow.sketchflow_backend.model.User;
 import com.sketchflow.sketchflow_backend.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
-@ConditionalOnProperty(name = "app.mongodb.enabled", havingValue = "true", matchIfMissing = false)
 public class UserService {
 
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
@@ -37,18 +36,22 @@ public class UserService {
 
     public List<User> getUsersByStatus(String status) {
         log.info("Fetching users by status={}", status);
-        List<User> users = userRepository.findByStatus(status);
+        List<User> users = userRepository.findAll()
+                .stream()
+                .filter(u -> u.getStatus() != null && u.getStatus().equalsIgnoreCase(status))
+                .collect(Collectors.toList());
         log.info("Found {} users with status {}", users.size(), status);
         return users;
     }
 
     public void updatePresence(String userId, String status, String ip, int port, long lastSeen) {
         try {
-            Optional<User> existing = userRepository.findById(userId);
+            // userId is mapped to username in this application
+            Optional<User> existing = userRepository.findByUsername(userId);
             User target = existing.orElseGet(() -> {
                 log.info("Creating new user record for presence update, userId={}", userId);
                 User placeholder = new User();
-                placeholder.setUserId(userId);
+                // set username as identifier
                 placeholder.setUsername(userId);
                 return placeholder;
             });

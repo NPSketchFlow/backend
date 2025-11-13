@@ -11,7 +11,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/chat")
-@CrossOrigin(origins = "*") // Use your specific frontend origin in production
+// CORS handled by global SecurityConfig
 public class ChatController {
 
     @Autowired

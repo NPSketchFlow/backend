@@ -1,10 +1,13 @@
 package com.sketchflow.sketchflow_backend.controller;
 
+import com.sketchflow.sketchflow_backend.model.Notification;
 import com.sketchflow.sketchflow_backend.model.VoiceChat;
+import com.sketchflow.sketchflow_backend.service.NotificationService;
 import com.sketchflow.sketchflow_backend.service.VoiceChatService;
 import com.sketchflow.sketchflow_backend.udp.UdpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,11 +32,17 @@ public class VoiceController {
     private static final String UPLOAD_DIR = "voice-data/uploads";
     private static final Logger log = LoggerFactory.getLogger(VoiceController.class);
     private final UdpServer udpServer;
-    private final VoiceChatService voiceChatService;
 
-    public VoiceController(UdpServer udpServer, VoiceChatService voiceChatService) {
+    // Make VoiceChatService optional - voice uploads still work without database
+    @Autowired(required = false)
+    private VoiceChatService voiceChatService;
+
+    // Add NotificationService to create proper notifications
+    @Autowired(required = false)
+    private NotificationService notificationService;
+
+    public VoiceController(UdpServer udpServer) {
         this.udpServer = udpServer;
-        this.voiceChatService = voiceChatService;
     }
 
     // Endpoint for uploading voice files
@@ -88,17 +97,59 @@ public class VoiceController {
                 udpServer.broadcast(metadata.getBytes(StandardCharsets.UTF_8));
             }
 
-            VoiceChat savedChat = voiceChatService.addVoiceChat(
-                    new VoiceChat(UUID.randomUUID().toString(), senderId, receiverId, filePath.toString(), timestamp)
-            );
+            // Save to database if available (MongoDB enabled)
+            VoiceChat savedChat = null;
+            if (voiceChatService != null) {
+                savedChat = voiceChatService.addVoiceChat(
+                        new VoiceChat(UUID.randomUUID().toString(), senderId, receiverId, filePath.toString(), timestamp)
+                );
+            } else {
+                log.info("VoiceChatService not available (MongoDB disabled) - file saved but not persisted to database");
+            }
+
+            // Create proper notification in database and send via UDP
+            Notification createdNotification = null;
+            if (notificationService != null && receiverId != null && !receiverId.isBlank()) {
+                try {
+                    // Create notification object
+                    Notification notification = new Notification();
+                    notification.setType("NEW_VOICE");
+                    notification.setFileId(storedFilename);
+                    notification.setSenderId(senderId);
+                    notification.setReceiverId(receiverId);
+                    notification.setMessage("You have received a new voice message from " + senderId);
+                    notification.setTimestamp(timestamp);
+                    notification.setPriority(2); // High priority for voice messages
+                    notification.setRead(false);
+
+                    // Save and broadcast notification
+                    createdNotification = notificationService.sendNotification(notification);
+                    log.info("Created notification {} for voice message from {} to {}",
+                            createdNotification.getId(), senderId, receiverId);
+                } catch (Exception e) {
+                    log.error("Failed to create notification for voice message: {}", e.getMessage(), e);
+                }
+            } else {
+                log.info("NotificationService not available or no receiverId - notification not created");
+            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("status", "uploaded");
             response.put("fileId", storedFilename);
             response.put("downloadUrl", "/api/voice/download/" + storedFilename);
-            response.put("voiceChat", savedChat);
+            if (savedChat != null) {
+                response.put("voiceChat", savedChat);
+            }
+            if (createdNotification != null) {
+                response.put("notification", createdNotification);
+                response.put("notificationCreated", true);
+            } else {
+                response.put("notificationCreated", false);
+            }
+            response.put("databaseEnabled", voiceChatService != null);
 
-            log.info("Uploaded voice file {} for sender {} (receiver {})", storedFilename, senderId, receiverId);
+            log.info("Uploaded voice file {} for sender {} (receiver {}) - notification created: {}",
+                    storedFilename, senderId, receiverId, createdNotification != null);
 
             return ResponseEntity.ok(response);
         } catch (IOException e) {

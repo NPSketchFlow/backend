@@ -10,7 +10,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/debug")
-@CrossOrigin(origins = "*")
+// CORS handled by global SecurityConfig
 public class DebugAuthController {
 
     @Autowired

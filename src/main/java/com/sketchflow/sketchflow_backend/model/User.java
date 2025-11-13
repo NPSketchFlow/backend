@@ -48,6 +48,17 @@ public class User {
 
     private String lastLoginIp;
 
+    // Presence / realtime fields added for voice/notification service
+    // status: ONLINE/OFFLINE etc.
+    private String status;
+
+    // lastSeen as epoch millis
+    private Long lastSeen;
+
+    // client ip and port for UDP notifications
+    private String ip;
+    private Integer port;
+
     public User(String username, String email, String password, String fullName) {
         this.username = username;
         this.email = email;
@@ -55,6 +66,9 @@ public class User {
         this.fullName = fullName;
         this.createdAt = LocalDateTime.now();
         this.roles.add("ROLE_USER");
+    }
+
+    public User(String s, String charlieBrown, String away, String s1, int i, long l) {
     }
 
     public void addRole(String role) {
@@ -65,4 +79,3 @@ public class User {
         this.roles.remove(role);
     }
 }
-
