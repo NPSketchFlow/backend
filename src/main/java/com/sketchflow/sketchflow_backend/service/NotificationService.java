@@ -121,6 +121,60 @@ public class NotificationService {
                 )
         );
         persist(notification);
+
+        // When user comes online, send them their missed notifications
+        if ("ONLINE".equals(event.status())) {
+            sendMissedNotifications(event.userId());
+        }
+    }
+
+    /**
+     * Send all unread notifications to a user who just came online
+     */
+    public void sendMissedNotifications(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return;
+        }
+
+        try {
+            List<Notification> unreadNotifications = listUnread(userId);
+            if (unreadNotifications.isEmpty()) {
+                System.out.println("[NotificationService] No missed notifications for user: " + userId);
+                return;
+            }
+
+            System.out.println("[NotificationService] Sending " + unreadNotifications.size() + " missed notifications to user: " + userId);
+
+            // Find the user's current address
+            List<OnlineUserTracker.OnlineUserInfo> onlineUsers = onlineUserTracker.listOnlineUsers();
+            InetSocketAddress userAddress = null;
+            for (OnlineUserTracker.OnlineUserInfo userInfo : onlineUsers) {
+                if (userId.equals(userInfo.getUserId())) {
+                    userAddress = new InetSocketAddress(userInfo.getIp(), userInfo.getPort());
+                    break;
+                }
+            }
+
+            if (userAddress == null) {
+                System.out.println("[NotificationService] User " + userId + " address not found, cannot send missed notifications");
+                return;
+            }
+
+            // Send each missed notification
+            try (DatagramSocket socket = new DatagramSocket()) {
+                for (Notification notification : unreadNotifications) {
+                    try {
+                        sendUsingSocket(socket, userAddress, notification);
+                        // Don't mark as read yet - let the client acknowledge receipt
+                    } catch (Exception e) {
+                        System.out.println("[NotificationService] Failed to send missed notification " + notification.getId() + ": " + e.getMessage());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("[NotificationService] Error sending missed notifications: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     private Notification persist(Notification notification) {
