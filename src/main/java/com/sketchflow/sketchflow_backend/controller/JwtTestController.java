@@ -16,6 +16,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/test")
+@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
 // CORS handled by global SecurityConfig - removed @CrossOrigin to avoid conflicts
 public class JwtTestController {
 
