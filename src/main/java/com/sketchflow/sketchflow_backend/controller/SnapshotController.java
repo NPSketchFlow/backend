@@ -21,7 +21,7 @@ import java.util.logging.Logger;
 
 @RestController
 @RequestMapping("/api/whiteboard")
-@CrossOrigin(origins = "*")
+// CORS handled by global SecurityConfig
 public class SnapshotController {
 
     private static final Logger logger = Logger.getLogger(SnapshotController.class.getName());

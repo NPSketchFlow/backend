@@ -77,7 +77,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/whiteboard/monitor/**").permitAll()
                         .requestMatchers("/error").permitAll() // Allow error endpoint
                         .requestMatchers("/api/whiteboard/sessions/*/ws").permitAll()
-                        .requestMatchers("/api/admin/**").permitAll()
+                        // Admin endpoints - require ADMIN role
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         // Whiteboard endpoints - require authentication
                         .requestMatchers("/api/whiteboard/**").authenticated()
                         // All other requests require authentication

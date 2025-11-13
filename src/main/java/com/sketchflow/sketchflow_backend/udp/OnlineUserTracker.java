@@ -1,5 +1,9 @@
 package com.sketchflow.sketchflow_backend.udp;
 
+import com.sketchflow.sketchflow_backend.service.NotificationService;
+import com.sketchflow.sketchflow_backend.service.UserService;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.net.InetSocketAddress;
@@ -19,8 +23,13 @@ public class OnlineUserTracker {
 
     private final ConcurrentHashMap<InetSocketAddress, OnlineUserInfo> onlineUsers = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    private final UserService userService;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public OnlineUserTracker() {
+    public OnlineUserTracker(@Autowired(required = false) UserService userService,
+                             ApplicationEventPublisher eventPublisher) {
+        this.userService = userService;
+        this.eventPublisher = eventPublisher;
         // Schedule a task to mark users offline if lastSeen is older than TTL
         scheduler.scheduleAtFixedRate(this::checkUserStatus, 5, 5, TimeUnit.SECONDS);
     }
@@ -29,25 +38,65 @@ public class OnlineUserTracker {
         long serverTimestamp = System.currentTimeMillis();
         long rtt = serverTimestamp - clientTimestamp;
 
-        onlineUsers.compute(addr, (key, userInfo) -> {
+        final boolean[] becameOnline = {false};
+
+        OnlineUserInfo info = onlineUsers.compute(addr, (key, userInfo) -> {
             if (userInfo == null) {
                 logger.info("User " + userId + " became online from " + addr);
+                becameOnline[0] = true;
                 return new OnlineUserInfo(userId, serverTimestamp, rtt, addr.getAddress().getHostAddress(), addr.getPort(), "ONLINE");
             } else {
+                if (!"ONLINE".equals(userInfo.getStatus())) {
+                    becameOnline[0] = true;
+                }
                 userInfo.setLastSeenTimestamp(serverTimestamp);
                 userInfo.setRttEstimate(rtt);
                 userInfo.setStatus("ONLINE");
                 return userInfo;
             }
         });
+
+        if (userService != null && info != null) {
+            userService.updatePresence(userId,
+                    "ONLINE",
+                    info.getIp(),
+                    info.getPort(),
+                    serverTimestamp);
+        }
+
+        if (becameOnline[0] && eventPublisher != null && info != null) {
+            eventPublisher.publishEvent(new NotificationService.PresenceChangeEvent(
+                    userId,
+                    "ONLINE",
+                    info.getIp(),
+                    info.getPort(),
+                    serverTimestamp
+            ));
+        }
     }
 
     private void checkUserStatus() {
         long currentTime = System.currentTimeMillis();
         onlineUsers.forEach((addr, userInfo) -> {
-            if (currentTime - userInfo.getLastSeenTimestamp() > TTL) {
+            if (currentTime - userInfo.getLastSeenTimestamp() > TTL && !"OFFLINE".equals(userInfo.getStatus())) {
                 userInfo.setStatus("OFFLINE");
                 logger.info("User " + userInfo.getUserId() + " went offline from " + addr);
+                if (userService != null) {
+                    userService.updatePresence(userInfo.getUserId(),
+                            "OFFLINE",
+                            userInfo.getIp(),
+                            userInfo.getPort(),
+                            currentTime);
+                }
+                if (eventPublisher != null) {
+                    eventPublisher.publishEvent(new NotificationService.PresenceChangeEvent(
+                            userInfo.getUserId(),
+                            "OFFLINE",
+                            userInfo.getIp(),
+                            userInfo.getPort(),
+                            currentTime
+                    ));
+                }
             }
         });
     }

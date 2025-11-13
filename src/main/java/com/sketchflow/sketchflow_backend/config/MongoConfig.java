@@ -9,8 +9,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 
 @Configuration
-@EnableMongoRepositories(basePackages = "com.sketchflow.sketchflow_backend.repository")
 public class MongoConfig {
+    // Spring Boot auto-configuration handles MongoDB connection.
+    // Removed @EnableMongoRepositories to avoid duplicate repository registration
     // Let Spring Boot auto-configuration handle MongoDB connection
     // The tlsAllowInvalidCertificates parameter in the URI will be respected
     /* * -----------------------------------------------------------
@@ -28,4 +29,3 @@ public class MongoConfig {
         return mapper;
     }
 }
-

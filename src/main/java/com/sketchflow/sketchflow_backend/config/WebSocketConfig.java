@@ -25,6 +25,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        // Use origin patterns rather than wildcard when credentials are allowed elsewhere
+        registry.addHandler(whiteboardWebSocketHandler, "/api/whiteboard/sessions/{sessionId}/ws")
+                .setAllowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*"); // safer CORS patterns
+    }
         // This is the existing route for the whiteboard
         registry.addHandler(whiteboardWebSocketHandler, "/api/whiteboard/sessions/{sessionId}/ws")
                 .setAllowedOrigins("*");
@@ -45,4 +49,3 @@ public class WebSocketConfig implements WebSocketConfigurer {
 //        return mapper;
 //    }
 }
-

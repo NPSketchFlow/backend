@@ -19,7 +19,7 @@ import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/whiteboard/sessions/{sessionId}/actions")
-@CrossOrigin(origins = "*")
+// CORS handled by global SecurityConfig
 public class DrawingActionController {
 
     @Autowired
