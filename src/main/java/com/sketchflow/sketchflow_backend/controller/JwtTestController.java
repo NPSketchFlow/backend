@@ -16,13 +16,14 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/test")
-@CrossOrigin(origins = "*")
+// CORS handled by global SecurityConfig - removed @CrossOrigin to avoid conflicts
 public class JwtTestController {
 
     @Autowired
     private JwtTokenProvider jwtTokenProvider;
 
-    @Value("${app.jwt.secret}")
+    // Provide a safe default so application context can start even if property is not set
+    @Value("${app.jwt.secret:sketchflow-secret-key-for-jwt-token-generation-minimum-256-bits-required}")
     private String jwtSecret;
 
     /**
@@ -102,4 +103,3 @@ public class JwtTestController {
         return ResponseEntity.ok(response);
     }
 }
-

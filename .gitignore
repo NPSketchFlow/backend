@@ -31,3 +31,12 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Voice uploads and generated samples
+voice-data/
+
+# Environment files
+.env
+.env.*
+*.env
+qodana.yaml
