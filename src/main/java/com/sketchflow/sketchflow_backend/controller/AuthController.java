@@ -13,7 +13,9 @@ import com.sketchflow.sketchflow_backend.dto.UpdateProfileRequest;
 import org.springframework.web.bind.annotation.PutMapping;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -84,6 +86,30 @@ public class AuthController {
             error.put("error", e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
+    }
+    /**
+     * NEW METHOD: Get a list of all users for the chat page.
+     */
+    @GetMapping("/users")
+    public ResponseEntity<List<Map<String, Object>>> getAllUsers() {
+        List<User> users = authService.getAllUsers();
+
+        // We must filter out the password and other sensitive data
+        List<Map<String, Object>> safeUserList = users.stream().map(user -> {
+            Map<String, Object> response = new HashMap<>();
+            response.put("userId", user.getId());
+
+            // This is the UserResponse format the frontend expects
+            response.put("username", user.getUsername());
+            response.put("status", "OFFLINE"); // We can wire this up to the tracker later
+            response.put("ip", "N/A");
+            response.put("port", 0);
+            response.put("lastSeen", user.getLastLogin() != null ? user.getLastLogin().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() : 0);
+
+            return response;
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(safeUserList);
     }
 
     private ResponseEntity<?> getResponseEntity(User updatedUser) {

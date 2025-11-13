@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
+import com.sketchflow.sketchflow_backend.websocket.ChatWebSocketHandler;
 
 @Configuration
 @EnableWebSocket
@@ -19,21 +20,29 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Autowired
     private WhiteboardWebSocketHandler whiteboardWebSocketHandler;
 
+    @Autowired
+    private ChatWebSocketHandler chatWebSocketHandler;
+
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
+        // This is the existing route for the whiteboard
         registry.addHandler(whiteboardWebSocketHandler, "/api/whiteboard/sessions/{sessionId}/ws")
-                .setAllowedOrigins("*"); // Configure CORS as needed
+                .setAllowedOrigins("*");
+
+        // ADD THIS NEW ROUTE for the DM chat
+        registry.addHandler(chatWebSocketHandler, "/api/chat/ws")
+                .setAllowedOrigins("*");
     }
 
-    @Bean
-    @Primary
-    public ObjectMapper objectMapper() {
-        ObjectMapper mapper = new ObjectMapper();
-        // Register JavaTimeModule for Java 8 date/time support
-        mapper.registerModule(new JavaTimeModule());
-        // Disable writing dates as timestamps
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        return mapper;
-    }
+//    @Bean
+//    @Primary
+//    public ObjectMapper objectMapper() {
+//        ObjectMapper mapper = new ObjectMapper();
+//        // Register JavaTimeModule for Java 8 date/time support
+//        mapper.registerModule(new JavaTimeModule());
+//        // Disable writing dates as timestamps
+//        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+//        return mapper;
+//    }
 }
 
