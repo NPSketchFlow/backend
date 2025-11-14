@@ -25,18 +25,16 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        // Use origin patterns rather than wildcard when credentials are allowed elsewhere
+
+        // This is the route for the whiteboard
         registry.addHandler(whiteboardWebSocketHandler, "/api/whiteboard/sessions/{sessionId}/ws")
                 .setAllowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*"); // safer CORS patterns
-    }
-        // This is the existing route for the whiteboard
-        registry.addHandler(whiteboardWebSocketHandler, "/api/whiteboard/sessions/{sessionId}/ws")
-                .setAllowedOrigins("*");
 
-        // ADD THIS NEW ROUTE for the DM chat
+        // This is the new route for the DM chat
         registry.addHandler(chatWebSocketHandler, "/api/chat/ws")
-                .setAllowedOrigins("*");
+                .setAllowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*"); // Also use safer patterns
     }
+}
 
 //    @Bean
 //    @Primary
@@ -48,4 +46,4 @@ public class WebSocketConfig implements WebSocketConfigurer {
 //        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 //        return mapper;
 //    }
-}
+

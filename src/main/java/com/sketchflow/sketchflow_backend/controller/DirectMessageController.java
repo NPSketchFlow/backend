@@ -11,7 +11,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/dm")
-@CrossOrigin(origins = "*") // Use your specific frontend origin in production
+@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")// Use your specific frontend origin in production
 public class DirectMessageController {
 
     @Autowired

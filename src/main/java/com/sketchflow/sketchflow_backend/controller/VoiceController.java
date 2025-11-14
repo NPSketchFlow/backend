@@ -13,6 +13,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import java.util.List;
+import java.util.ArrayList;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -182,5 +184,15 @@ public class VoiceController {
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
         }
+    }
+
+    /**
+     * NEW: Stub endpoint for getVoiceChats to prevent 404s on the frontend.
+     * This feature is not fully built, so it returns an empty list.
+     */
+    @GetMapping("/chats")
+    public ResponseEntity<List<?>> getVoiceChats() {
+        // Return an empty list so the frontend doesn't get a 404 error
+        return ResponseEntity.ok(new ArrayList<>());
     }
 }
