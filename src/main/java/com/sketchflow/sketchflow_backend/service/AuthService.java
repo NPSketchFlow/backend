@@ -17,9 +17,12 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.logging.Logger;
 
 @Service
 public class AuthService {
+
+    private static final Logger logger = Logger.getLogger(AuthService.class.getName());
 
     @Autowired
     private UserRepository userRepository;
@@ -107,11 +110,22 @@ public class AuthService {
 
     public User getCurrentUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
+
+        // Check if authentication exists and is not anonymous
+        if (authentication == null ||
+            !authentication.isAuthenticated() ||
+            authentication instanceof org.springframework.security.authentication.AnonymousAuthenticationToken) {
+
+            logger.warning("⚠️ No authenticated user found in security context");
+            if (authentication != null) {
+                logger.warning("   Authentication type: " + authentication.getClass().getName());
+                logger.warning("   Is authenticated: " + authentication.isAuthenticated());
+            }
             return null;
         }
 
         String username = authentication.getName();
+        logger.info("✅ Current authenticated user: " + username);
         return userRepository.findByUsername(username).orElse(null);
     }
 

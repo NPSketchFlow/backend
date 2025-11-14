@@ -78,6 +78,9 @@ public class WhiteboardWebSocketHandler extends TextWebSocketHandler {
                     case "DRAW":
                         handleDrawMessage(session, wsMessage);
                         break;
+                    case "ERASE":
+                        handleEraseMessage(session, wsMessage);
+                        break;
                     case "CLEAR":
                         handleClearMessage(session, wsMessage);
                         break;
@@ -172,6 +175,37 @@ public class WhiteboardWebSocketHandler extends TextWebSocketHandler {
 
         } catch (Exception e) {
             logger.severe("Error handling DRAW message: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Handle ERASE message - delete a specific drawing action
+     */
+    private void handleEraseMessage(WebSocketSession session, WebSocketMessage message) {
+        try {
+            String sessionId = sessionManager.getWhiteboardSessionId(session);
+            String userId = message.getUserId();
+            String actionId = message.getActionId();
+
+            if (actionId == null || actionId.isEmpty()) {
+                logger.warning("ERASE message missing actionId from user: " + userId);
+                return;
+            }
+
+            // Delete the action asynchronously (already handled by REST API, but support via WebSocket too)
+            drawingActionService.deleteActionAsync(sessionId, actionId);
+
+            // Update user activity
+            activeUserService.updateActivity(sessionId, userId);
+
+            // Broadcast erase to all users in session (including sender for confirmation)
+            message.setTimestamp(System.currentTimeMillis());
+            broadcastToSession(sessionId, message, null);
+
+            logger.info("Action " + actionId + " erased in session " + sessionId + " by user " + userId);
+
+        } catch (Exception e) {
+            logger.severe("Error handling ERASE message: " + e.getMessage());
         }
     }
 

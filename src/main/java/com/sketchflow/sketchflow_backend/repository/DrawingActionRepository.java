@@ -14,5 +14,7 @@ public interface DrawingActionRepository extends MongoRepository<DrawingAction, 
     Page<DrawingAction> findBySessionIdOrderByTimestampAsc(String sessionId, Pageable pageable);
     long countBySessionId(String sessionId);
     void deleteBySessionId(String sessionId);
+    void deleteByActionId(String actionId);
+    void deleteBySessionIdAndActionId(String sessionId, String actionId);
 }
 

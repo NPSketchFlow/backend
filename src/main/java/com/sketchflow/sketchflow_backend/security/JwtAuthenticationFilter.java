@@ -32,9 +32,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
 
+        // EXTREMELY AGGRESSIVE LOGGING - FORCE OUTPUT
+        System.err.println("╔═══════════════════════════════════════════════════════════════════");
+        System.err.println("║ 🔐🔐🔐 JWT FILTER EXECUTING - doFilterInternal() CALLED 🔐🔐🔐");
+        System.err.println("║ URI: " + request.getRequestURI());
+        System.err.println("║ Method: " + request.getMethod());
+        System.err.println("║ Thread: " + Thread.currentThread().getName());
+        System.err.println("╚═══════════════════════════════════════════════════════════════════");
+
         // FORCE CONSOLE OUTPUT
         System.out.println("========================================");
         System.out.println("🔍 JWT FILTER EXECUTING for: " + request.getRequestURI());
+        System.out.println("   Method: " + request.getMethod());
         System.out.println("========================================");
 
         try {
@@ -99,6 +108,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         System.out.println("========================================");
         filterChain.doFilter(request, response);
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String path = request.getRequestURI();
+        boolean shouldSkip = false; // By default, don't skip any path
+
+        // CRITICAL LOGGING
+        System.err.println("╔═══════════════════════════════════════════════════════════════════");
+        System.err.println("║ 🔍 shouldNotFilter() called for: " + path);
+        System.err.println("║ Method: " + request.getMethod());
+        System.err.println("║ Will skip filter? " + shouldSkip);
+        System.err.println("╚═══════════════════════════════════════════════════════════════════");
+
+        return shouldSkip;
     }
 
     private String getJwtFromRequest(HttpServletRequest request) {

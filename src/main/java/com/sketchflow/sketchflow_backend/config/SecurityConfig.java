@@ -63,12 +63,19 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        System.err.println("╔═══════════════════════════════════════════════════════════════════");
+        System.err.println("║ 🔧 SecurityConfig.filterChain() - CONFIGURING SECURITY");
+        System.err.println("║ JWT Filter instance: " + jwtAuthenticationFilter);
+        System.err.println("╚═══════════════════════════════════════════════════════════════════");
+
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
                 .exceptionHandling(exception -> exception.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
+                .authorizeHttpRequests(auth -> {
+                    System.err.println("║ 🔐 Configuring authorization rules...");
+                    auth
                         // Public endpoints
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/debug/**").permitAll()
@@ -80,10 +87,14 @@ public class SecurityConfig {
                         // Whiteboard endpoints - require authentication
                         .requestMatchers("/api/whiteboard/**").authenticated()
                         // All other requests require authentication
-                        .anyRequest().authenticated()
-                )
+                        .anyRequest().authenticated();
+                    System.err.println("║ ✅ Authorization rules configured");
+                })
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
+        System.err.println("║ ✅ JWT Filter added to filter chain");
+        System.err.println("╚═══════════════════════════════════════════════════════════════════");
 
         return http.build();
     }

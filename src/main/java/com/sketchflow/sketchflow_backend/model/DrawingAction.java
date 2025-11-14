@@ -1,5 +1,6 @@
 package com.sketchflow.sketchflow_backend.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -8,7 +9,6 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -31,6 +31,7 @@ public class DrawingAction {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Coordinates {
         private List<Point> points;
         private Point start;
@@ -48,9 +49,10 @@ public class DrawingAction {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Properties {
         private double lineWidth;
-        private boolean isEraser;
+        // isEraser field removed - frontend no longer sends it
     }
 }
 

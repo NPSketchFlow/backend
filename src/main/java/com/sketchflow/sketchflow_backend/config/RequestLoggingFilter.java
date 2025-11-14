@@ -23,22 +23,22 @@ public class RequestLoggingFilter implements Filter {
             String uri = httpRequest.getRequestURI();
             String authHeader = httpRequest.getHeader("Authorization");
 
-            // Force output with System.err to ensure it shows up
-//            System.err.println("╔════════════════════════════════════════");
-//            System.err.println("║ 🚨 REQUEST LOGGING FILTER - BEFORE SECURITY");
-//            System.err.println("║ Thread: " + threadName);
-//            System.err.println("║ Method: " + method);
-//            System.err.println("║ URI: " + uri);
-//            System.err.println("║ Auth Header: " + (authHeader != null ? "Present (Bearer token)" : "NOT PRESENT"));
-//            System.err.println("╚════════════════════════════════════════");
-//
-//            System.out.println("╔════════════════════════════════════════");
-//            System.out.println("║ 🌐 INCOMING REQUEST");
-//            System.out.println("║ Thread: " + threadName);
-//            System.out.println("║ Method: " + method);
-//            System.out.println("║ URI: " + uri);
-//            System.out.println("║ Auth Header: " + (authHeader != null ? "Present (Bearer token)" : "NOT PRESENT"));
-//            System.out.println("╚════════════════════════════════════════");
+            // CRITICAL: Force output with System.err to ensure it shows up
+            System.err.println("╔════════════════════════════════════════");
+            System.err.println("║ 🚨 REQUEST LOGGING FILTER - BEFORE SECURITY");
+            System.err.println("║ Thread: " + threadName);
+            System.err.println("║ Method: " + method);
+            System.err.println("║ URI: " + uri);
+            System.err.println("║ Auth Header: " + (authHeader != null ? "Present (starts with: " + authHeader.substring(0, Math.min(20, authHeader.length())) + "...)" : "❌ NOT PRESENT"));
+            System.err.println("╚════════════════════════════════════════");
+
+            System.out.println("╔════════════════════════════════════════");
+            System.out.println("║ 🌐 INCOMING REQUEST");
+            System.out.println("║ Thread: " + threadName);
+            System.out.println("║ Method: " + method);
+            System.out.println("║ URI: " + uri);
+            System.out.println("║ Auth Header: " + (authHeader != null ? "Present (starts with: " + authHeader.substring(0, Math.min(20, authHeader.length())) + "...)" : "❌ NOT PRESENT"));
+            System.out.println("╚════════════════════════════════════════");
         }
 
         long startTime = System.currentTimeMillis();

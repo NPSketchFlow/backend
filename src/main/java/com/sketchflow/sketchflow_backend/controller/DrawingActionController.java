@@ -36,7 +36,7 @@ public class DrawingActionController {
             @PathVariable String sessionId,
             @RequestBody DrawingActionRequest request) {
 
-        // Get authenticated user
+        // CRITICAL: Capture user and SecurityContext BEFORE async operation
         User currentUser = authService.getCurrentUser();
         if (currentUser == null) {
             return CompletableFuture.completedFuture(
@@ -45,16 +45,20 @@ public class DrawingActionController {
             );
         }
 
+        // Capture user details synchronously
+        final String userId = currentUser.getId();
+        final String username = currentUser.getUsername();
+
         // Set the authenticated user as the action creator
-        request.setUserId(currentUser.getId());
+        request.setUserId(userId);
 
         return drawingActionService.saveActionAsync(sessionId, request)
             .thenApply(action -> {
                 Map<String, Object> response = new HashMap<>();
                 response.put("actionId", action.getActionId());
                 response.put("timestamp", action.getTimestamp());
-                response.put("userId", currentUser.getId());
-                response.put("username", currentUser.getUsername());
+                response.put("userId", userId);
+                response.put("username", username);
 
                 return ResponseEntity.status(HttpStatus.CREATED).body(response);
             })
@@ -102,7 +106,7 @@ public class DrawingActionController {
      */
     @DeleteMapping
     public CompletableFuture<ResponseEntity<Map<String, Object>>> clearActions(@PathVariable String sessionId) {
-        // Get authenticated user
+        // CRITICAL: Capture user BEFORE async operation
         User currentUser = authService.getCurrentUser();
         if (currentUser == null) {
             return CompletableFuture.completedFuture(
@@ -111,12 +115,52 @@ public class DrawingActionController {
             );
         }
 
+        // Capture username synchronously
+        final String username = currentUser.getUsername();
+
         return drawingActionService.clearSessionActionsAsync(sessionId)
             .thenApply(v -> {
                 Map<String, Object> response = new HashMap<>();
                 response.put("message", "All drawing actions cleared");
                 response.put("sessionId", sessionId);
-                response.put("clearedBy", currentUser.getUsername());
+                response.put("clearedBy", username);
+                return ResponseEntity.ok(response);
+            })
+            .exceptionally(ex -> {
+                Map<String, Object> error = new HashMap<>();
+                error.put("error", ex.getMessage());
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+            });
+    }
+
+    /**
+     * Delete a single drawing action (authenticated users only)
+     * Endpoint: DELETE /api/whiteboard/sessions/{sessionId}/actions/{actionId}
+     */
+    @DeleteMapping("/{actionId}")
+    public CompletableFuture<ResponseEntity<Map<String, Object>>> deleteAction(
+            @PathVariable String sessionId,
+            @PathVariable String actionId) {
+
+        // CRITICAL: Capture user BEFORE async operation
+        User currentUser = authService.getCurrentUser();
+        if (currentUser == null) {
+            return CompletableFuture.completedFuture(
+                ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "User not authenticated"))
+            );
+        }
+
+        // Capture username synchronously
+        final String username = currentUser.getUsername();
+
+        return drawingActionService.deleteActionAsync(sessionId, actionId)
+            .thenApply(v -> {
+                Map<String, Object> response = new HashMap<>();
+                response.put("message", "Drawing action deleted successfully");
+                response.put("sessionId", sessionId);
+                response.put("actionId", actionId);
+                response.put("deletedBy", username);
                 return ResponseEntity.ok(response);
             })
             .exceptionally(ex -> {

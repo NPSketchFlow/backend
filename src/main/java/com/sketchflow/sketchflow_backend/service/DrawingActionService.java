@@ -7,6 +7,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -44,33 +46,44 @@ public class DrawingActionService {
      * Save drawing action asynchronously with batching
      */
     public CompletableFuture<DrawingAction> saveActionAsync(String sessionId, DrawingActionRequest request) {
+        // Capture SecurityContext from current thread
+        SecurityContext context = SecurityContextHolder.getContext();
+
         return CompletableFuture.supplyAsync(() -> {
-            String actionId = UUID.randomUUID().toString();
-
-            DrawingAction action = new DrawingAction();
-            action.setActionId(actionId);
-            action.setSessionId(sessionId);
-            action.setUserId(request.getUserId());
-            action.setTool(request.getTool());
-            action.setColor(request.getColor());
-            action.setActionType(request.getActionType());
-            action.setCoordinates(request.getCoordinates());
-            action.setProperties(request.getProperties());
-            action.setTimestamp(LocalDateTime.now());
-
             try {
-                // Add to batch queue for optimized persistence
-                actionQueue.offer(action, 1, TimeUnit.SECONDS);
-                logger.fine("Queued drawing action: " + actionId);
-            } catch (InterruptedException e) {
-                logger.warning("Failed to queue action: " + e.getMessage());
-                Thread.currentThread().interrupt();
+                // Set SecurityContext in async thread
+                SecurityContextHolder.setContext(context);
+
+                String actionId = UUID.randomUUID().toString();
+
+                DrawingAction action = new DrawingAction();
+                action.setActionId(actionId);
+                action.setSessionId(sessionId);
+                action.setUserId(request.getUserId());
+                action.setTool(request.getTool());
+                action.setColor(request.getColor());
+                action.setActionType(request.getActionType());
+                action.setCoordinates(request.getCoordinates());
+                action.setProperties(request.getProperties());
+                action.setTimestamp(LocalDateTime.now());
+
+                try {
+                    // Add to batch queue for optimized persistence
+                    actionQueue.offer(action, 1, TimeUnit.SECONDS);
+                    logger.fine("Queued drawing action: " + actionId);
+                } catch (InterruptedException e) {
+                    logger.warning("Failed to queue action: " + e.getMessage());
+                    Thread.currentThread().interrupt();
+                }
+
+                // Update session activity
+                sessionService.updateSessionActivity(sessionId);
+
+                return action;
+            } finally {
+                // Clean up SecurityContext
+                SecurityContextHolder.clearContext();
             }
-
-            // Update session activity
-            sessionService.updateSessionActivity(sessionId);
-
-            return action;
         }, executorService);
     }
 
@@ -116,9 +129,62 @@ public class DrawingActionService {
      * Clear all actions for a session
      */
     public CompletableFuture<Void> clearSessionActionsAsync(String sessionId) {
+        // Capture SecurityContext from current thread
+        SecurityContext context = SecurityContextHolder.getContext();
+
         return CompletableFuture.runAsync(() -> {
-            actionRepository.deleteBySessionId(sessionId);
-            logger.info("Cleared all actions for session: " + sessionId);
+            try {
+                // Set SecurityContext in async thread
+                SecurityContextHolder.setContext(context);
+
+                actionRepository.deleteBySessionId(sessionId);
+                logger.info("Cleared all actions for session: " + sessionId);
+            } finally {
+                // Clean up SecurityContext
+                SecurityContextHolder.clearContext();
+            }
+        }, executorService);
+    }
+
+    /**
+     * Delete a single drawing action by actionId
+     */
+    public CompletableFuture<Void> deleteActionAsync(String actionId) {
+        // Capture SecurityContext from current thread
+        SecurityContext context = SecurityContextHolder.getContext();
+
+        return CompletableFuture.runAsync(() -> {
+            try {
+                // Set SecurityContext in async thread
+                SecurityContextHolder.setContext(context);
+
+                actionRepository.deleteByActionId(actionId);
+                logger.info("Deleted drawing action: " + actionId);
+            } finally {
+                // Clean up SecurityContext
+                SecurityContextHolder.clearContext();
+            }
+        }, executorService);
+    }
+
+    /**
+     * Delete a single drawing action by sessionId and actionId
+     */
+    public CompletableFuture<Void> deleteActionAsync(String sessionId, String actionId) {
+        // Capture SecurityContext from current thread
+        SecurityContext context = SecurityContextHolder.getContext();
+
+        return CompletableFuture.runAsync(() -> {
+            try {
+                // Set SecurityContext in async thread
+                SecurityContextHolder.setContext(context);
+
+                actionRepository.deleteBySessionIdAndActionId(sessionId, actionId);
+                logger.info("Deleted drawing action " + actionId + " from session: " + sessionId);
+            } finally {
+                // Clean up SecurityContext
+                SecurityContextHolder.clearContext();
+            }
         }, executorService);
     }
 
