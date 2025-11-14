@@ -2,13 +2,18 @@ package com.sketchflow.sketchflow_backend.udp;
 
 import com.sketchflow.sketchflow_backend.service.NotificationService;
 import com.sketchflow.sketchflow_backend.service.UserService;
+import com.sketchflow.sketchflow_backend.model.User;
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.List;
+import java.time.ZoneId;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -19,18 +24,21 @@ import java.util.logging.Logger;
 public class OnlineUserTracker {
 
     private static final Logger logger = Logger.getLogger(OnlineUserTracker.class.getName());
-    private static final long TTL = 15000; // Time-to-live for online users in milliseconds
+    // configurable TTL (default 3 minutes = 180000 ms)
+    private final long ttlMs;
 
     private final ConcurrentHashMap<InetSocketAddress, OnlineUserInfo> onlineUsers = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private final UserService userService;
     private final ApplicationEventPublisher eventPublisher;
 
     public OnlineUserTracker(@Autowired(required = false) UserService userService,
-                             ApplicationEventPublisher eventPublisher) {
+                             ApplicationEventPublisher eventPublisher,
+                             @Value("${sketchflow.online.ttl-ms:180000}") long ttlMs) {
         this.userService = userService;
         this.eventPublisher = eventPublisher;
-        // Schedule a task to mark users offline if lastSeen is older than TTL
+        this.ttlMs = ttlMs;
+        // Schedule a task to mark users offline if lastSeen is older than ttlMs
+        ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
         scheduler.scheduleAtFixedRate(this::checkUserStatus, 5, 5, TimeUnit.SECONDS);
     }
 
@@ -56,7 +64,7 @@ public class OnlineUserTracker {
             }
         });
 
-        if (userService != null && info != null) {
+        if (userService != null) {
             userService.updatePresence(userId,
                     "ONLINE",
                     info.getIp(),
@@ -64,7 +72,7 @@ public class OnlineUserTracker {
                     serverTimestamp);
         }
 
-        if (becameOnline[0] && eventPublisher != null && info != null) {
+        if (becameOnline[0] && eventPublisher != null) {
             eventPublisher.publishEvent(new NotificationService.PresenceChangeEvent(
                     userId,
                     "ONLINE",
@@ -78,7 +86,7 @@ public class OnlineUserTracker {
     private void checkUserStatus() {
         long currentTime = System.currentTimeMillis();
         onlineUsers.forEach((addr, userInfo) -> {
-            if (currentTime - userInfo.getLastSeenTimestamp() > TTL && !"OFFLINE".equals(userInfo.getStatus())) {
+            if (currentTime - userInfo.getLastSeenTimestamp() > ttlMs && !"OFFLINE".equals(userInfo.getStatus())) {
                 userInfo.setStatus("OFFLINE");
                 logger.info("User " + userInfo.getUserId() + " went offline from " + addr);
                 if (userService != null) {
@@ -99,6 +107,46 @@ public class OnlineUserTracker {
                 }
             }
         });
+
+        // Also sync presence from DB: any user who has status ONLINE in DB or a recent lastSeen should be returned as online
+        if (userService != null) {
+            try {
+                List<User> users = userService.getAllUsers();
+                long cutoff = System.currentTimeMillis() - ttlMs;
+                for (User u : users) {
+                    if (u == null) continue;
+                    long lastActiveMillis = 0L;
+                    if (u.getLastSeen() != null) {
+                        lastActiveMillis = u.getLastSeen();
+                    } else if (u.getLoginTime() != null) {
+                        try {
+                            lastActiveMillis = u.getLoginTime().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                        } catch (Exception ex) {
+                            lastActiveMillis = 0L;
+                        }
+                    }
+
+                    boolean recentSeen = lastActiveMillis > cutoff;
+                    boolean dbOnline = "ONLINE".equalsIgnoreCase(u.getStatus()) || recentSeen;
+
+                    if (dbOnline) {
+                        String ip = u.getIp() != null ? u.getIp() : "127.0.0.1";
+                        int port = u.getPort() != null ? u.getPort() : 0;
+                        InetSocketAddress addr = new InetSocketAddress(ip, port);
+                        long useLast = lastActiveMillis > 0 ? lastActiveMillis : System.currentTimeMillis();
+                        onlineUsers.computeIfAbsent(addr, k -> {
+                            logger.info("Syncing DB presence: marking " + u.getUsername() + " online (from DB)");
+                            if (eventPublisher != null) {
+                                eventPublisher.publishEvent(new NotificationService.PresenceChangeEvent(u.getUsername(), "ONLINE", ip, port, System.currentTimeMillis()));
+                            }
+                            return new OnlineUserInfo(u.getUsername(), useLast, 0L, ip, port, "ONLINE");
+                        });
+                    }
+                }
+            } catch (Exception ex) {
+                logger.warning("Failed to sync presence from DB: " + ex.getMessage());
+            }
+        }
     }
 
     public List<OnlineUserInfo> listOnlineUsers() {
@@ -108,20 +156,41 @@ public class OnlineUserTracker {
                 onlineList.add(userInfo);
             }
         });
+
+        // Merge with DB users marked online if any, to ensure login-based presence is visible
+        if (userService != null) {
+            try {
+                List<User> dbOnline = userService.getUsersByStatus("ONLINE");
+                for (User u : dbOnline) {
+                    // Avoid duplicates based on username
+                    boolean exists = onlineList.stream().anyMatch(info -> u.getUsername().equals(info.getUserId()));
+                    if (!exists) {
+                        String ip = u.getIp() != null ? u.getIp() : "127.0.0.1";
+                        int port = u.getPort() != null ? u.getPort() : 0;
+                        onlineList.add(new OnlineUserInfo(u.getUsername(), u.getLastSeen() != null ? u.getLastSeen() : System.currentTimeMillis(), 0L, ip, port, "ONLINE"));
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
         return onlineList;
     }
 
-    public String getUserStatus(InetSocketAddress addr) {
-        OnlineUserInfo userInfo = onlineUsers.get(addr);
-        return userInfo != null ? userInfo.getStatus() : "UNKNOWN";
-    }
-
     public static class OnlineUserInfo {
+        @Getter
         private final String userId;
+        @Getter
+        @Setter
         private long lastSeenTimestamp;
+        @Setter
         private long rttEstimate;
+        @Getter
         private final String ip;
+        @Getter
         private final int port;
+        @Getter
+        @Setter
         private String status;
 
         public OnlineUserInfo(String userId, long lastSeenTimestamp, long rttEstimate, String ip, int port, String status) {
@@ -133,40 +202,5 @@ public class OnlineUserTracker {
             this.status = status;
         }
 
-        public String getUserId() {
-            return userId;
-        }
-
-        public long getLastSeenTimestamp() {
-            return lastSeenTimestamp;
-        }
-
-        public void setLastSeenTimestamp(long lastSeenTimestamp) {
-            this.lastSeenTimestamp = lastSeenTimestamp;
-        }
-
-        public long getRttEstimate() {
-            return rttEstimate;
-        }
-
-        public void setRttEstimate(long rttEstimate) {
-            this.rttEstimate = rttEstimate;
-        }
-
-        public String getIp() {
-            return ip;
-        }
-
-        public int getPort() {
-            return port;
-        }
-
-        public String getStatus() {
-            return status;
-        }
-
-        public void setStatus(String status) {
-            this.status = status;
-        }
     }
 }

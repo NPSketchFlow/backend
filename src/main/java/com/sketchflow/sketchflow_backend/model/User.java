@@ -59,6 +59,13 @@ public class User {
     private String ip;
     private Integer port;
 
+    // WebSocket presence
+    private boolean online = false;
+
+    private LocalDateTime lastActive;
+    private LocalDateTime loginTime;
+    private LocalDateTime logoutTime;
+
     public User(String username, String email, String password, String fullName) {
         this.username = username;
         this.email = email;

@@ -72,6 +72,8 @@ public class SecurityConfig {
                         // Public endpoints
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/debug/**").permitAll()
+                        .requestMatchers("/api/online-users/public").permitAll()
+                        .requestMatchers("/api/voice/download/**").permitAll()
                         .requestMatchers("/api/test/**").permitAll()
                         .requestMatchers("/api/whiteboard/monitor/**").permitAll()
                         .requestMatchers("/error").permitAll() // Allow error endpoint

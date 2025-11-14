@@ -2,7 +2,12 @@ package com.sketchflow.sketchflow_backend.controller;
 
 import com.sketchflow.sketchflow_backend.model.Notification;
 import com.sketchflow.sketchflow_backend.service.NotificationService;
+import org.bson.Document;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import com.sketchflow.sketchflow_backend.udp.OnlineUserTracker;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,10 +23,12 @@ public class NotificationController {
 
     private final NotificationService notificationService;
     private final OnlineUserTracker onlineUserTracker;
+    private final MongoTemplate mongoTemplate;
 
-    public NotificationController(NotificationService notificationService, OnlineUserTracker onlineUserTracker) {
+    public NotificationController(NotificationService notificationService, OnlineUserTracker onlineUserTracker, @Autowired(required = false) MongoTemplate mongoTemplate) {
         this.notificationService = notificationService;
         this.onlineUserTracker = onlineUserTracker;
+        this.mongoTemplate = mongoTemplate;
     }
 
     @PostMapping("/notifications/send")
@@ -92,6 +99,52 @@ public class NotificationController {
     @GetMapping("/online-users")
     public ResponseEntity<List<OnlineUserTracker.OnlineUserInfo>> listOnlineUsers() {
         return ResponseEntity.ok(onlineUserTracker.listOnlineUsers());
+    }
+
+    // Public read-only endpoint for demos: returns minimal online user info without requiring auth
+    @GetMapping("/online-users/public")
+    public ResponseEntity<List<Map<String, Object>>> listOnlineUsersPublic() {
+        try {
+            List<OnlineUserTracker.OnlineUserInfo> full = onlineUserTracker.listOnlineUsers();
+            List<Map<String, Object>> out = new java.util.ArrayList<>();
+            for (OnlineUserTracker.OnlineUserInfo u : full) {
+                Map<String, Object> m = new HashMap<>();
+                m.put("userId", u.getUserId());
+                m.put("status", u.getStatus());
+                m.put("lastSeen", u.getLastSeenTimestamp());
+                out.add(m);
+            }
+            return ResponseEntity.ok(out);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(java.util.Collections.singletonList(Map.of("error", e.getMessage())));
+        }
+    }
+
+    // Debug endpoint to inspect why notifications for a receiverId may not be returned
+    @GetMapping("/notifications/debug/inspect")
+    public ResponseEntity<Map<String, Object>> inspectReceiver(@RequestParam("receiverId") String receiverId) {
+        Map<String, Object> out = new HashMap<>();
+        try {
+            List<Notification> fromService = notificationService.listNotifications(receiverId);
+            out.put("serviceCount", fromService == null ? 0 : fromService.size());
+
+            if (mongoTemplate != null) {
+                Query qExact = new Query(Criteria.where("receiverId").is(receiverId));
+                List<Document> exactDocs = mongoTemplate.find(qExact, Document.class, "notifications");
+                out.put("mongoExactCount", exactDocs == null ? 0 : exactDocs.size());
+
+                Query qRegex = new Query(Criteria.where("receiverId").regex(".*" + receiverId + ".*"));
+                List<Document> regexDocs = mongoTemplate.find(qRegex, Document.class, "notifications");
+                out.put("mongoRegexCount", regexDocs == null ? 0 : regexDocs.size());
+            } else {
+                out.put("mongoTemplate", "not-available");
+            }
+
+            return ResponseEntity.ok(out);
+        } catch (Exception e) {
+            out.put("error", e.getMessage());
+            return ResponseEntity.status(500).body(out);
+        }
     }
 
     public static class NotificationRequest {

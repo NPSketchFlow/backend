@@ -4,6 +4,8 @@ import com.sketchflow.sketchflow_backend.model.Notification;
 import com.sketchflow.sketchflow_backend.repository.NotificationRepository;
 import com.sketchflow.sketchflow_backend.udp.OnlineUserTracker;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -17,19 +19,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Service
 public class NotificationService {
 
+    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
+
     private final OnlineUserTracker onlineUserTracker;
     private final NotificationRepository notificationRepository;
+    private final com.sketchflow.sketchflow_backend.websocket.VoiceChatHandler voiceChatHandler;
+    private final com.sketchflow.sketchflow_backend.repository.UserRepository userRepository;
     private static final int FALLBACK_PORT = 9876; // used when no online users found for local testing
     private static final int DEBUG_FORCE_PORT = 60000; // debug: always send a copy here to help testing
 
     public NotificationService(OnlineUserTracker onlineUserTracker,
-                               @Autowired(required = false) NotificationRepository notificationRepository) {
+                               @Autowired(required = false) NotificationRepository notificationRepository,
+                               @Autowired(required = false) com.sketchflow.sketchflow_backend.websocket.VoiceChatHandler voiceChatHandler,
+                               @Autowired(required = false) com.sketchflow.sketchflow_backend.repository.UserRepository userRepository) {
         this.onlineUserTracker = onlineUserTracker;
         this.notificationRepository = notificationRepository;
+        this.voiceChatHandler = voiceChatHandler;
+        this.userRepository = userRepository;
     }
 
     public Notification notifyNewVoice(String fileId, String senderId) {
@@ -52,6 +63,14 @@ public class NotificationService {
     public Notification sendNotification(Notification notification) {
         Notification persisted = persist(notification);
         broadcast(persisted);
+        // Also broadcast over WebSocket if available
+        try {
+            if (voiceChatHandler != null) {
+                voiceChatHandler.broadcastNotification(persisted);
+            }
+        } catch (Exception e) {
+            System.out.println("[NotificationService] Failed to broadcast via WebSocket: " + e.getMessage());
+        }
         return persisted;
     }
 
@@ -62,14 +81,57 @@ public class NotificationService {
         if (receiverId == null || receiverId.isBlank()) {
             return notificationRepository.findAllOrdered();
         }
-        return notificationRepository.findByReceiverIdOrderByTimestampDesc(receiverId);
+
+        // Return notifications addressed to the receiver OR broadcast (receiverId == null)
+        List<Notification> targeted = notificationRepository.findByReceiverIdOrderByTimestampDesc(receiverId);
+
+        // If targeted empty, try resolving alternate forms (username vs id)
+        if ((targeted == null || targeted.isEmpty()) && userRepository != null) {
+            try {
+                var maybeUserById = userRepository.findById(receiverId);
+                if (maybeUserById.isPresent()) {
+                    String username = maybeUserById.get().getUsername();
+                    if (username != null && !username.isBlank()) {
+                        targeted = notificationRepository.findByReceiverIdOrderByTimestampDesc(username);
+                    }
+                } else {
+                    var maybeUserByUsername = userRepository.findByUsername(receiverId);
+                    if (maybeUserByUsername.isPresent()) {
+                        String id = maybeUserByUsername.get().getId();
+                        if (id != null && !id.isBlank()) {
+                            targeted = notificationRepository.findByReceiverIdOrderByTimestampDesc(id);
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                log.warn("Error while resolving alternate receiverId forms: {}", ex.getMessage());
+            }
+        }
+
+        List<Notification> broadcasts = notificationRepository.findAllOrdered()
+                .stream()
+                .filter(n -> n.getReceiverId() == null || n.getReceiverId().isBlank())
+                .toList();
+
+        // Merge keeping order by timestamp desc
+        return Stream.concat((targeted == null ? List.<Notification>of() : targeted).stream(), broadcasts.stream())
+                .sorted((a, b) -> Long.compare(b.getTimestamp(), a.getTimestamp()))
+                .toList();
     }
 
     public List<Notification> listUnread(String receiverId) {
         if (notificationRepository == null || receiverId == null || receiverId.isBlank()) {
             return List.of();
         }
-        return notificationRepository.findByReceiverIdAndReadFalseOrderByTimestampDesc(receiverId);
+        // Include unread notifications sent specifically to receiver plus unread broadcasts
+        List<Notification> targeted = notificationRepository.findByReceiverIdAndReadFalseOrderByTimestampDesc(receiverId);
+        List<Notification> broadcasts = notificationRepository.findAllOrdered()
+                .stream()
+                .filter(n -> (n.getReceiverId() == null || n.getReceiverId().isBlank()) && !n.isRead())
+                .toList();
+        return Stream.concat(targeted.stream(), broadcasts.stream())
+                .sorted((a, b) -> Long.compare(b.getTimestamp(), a.getTimestamp()))
+                .toList();
     }
 
     public long countUnread(String receiverId) {
@@ -187,6 +249,9 @@ public class NotificationService {
         if (notification.getMetadata() != null) {
             notification.setMetadata(notification.getMetadata());
         }
+        if (notification != null) {
+            log.debug("Persisting notification id='{}' type='{}' receiverId='{}'", notification.getId(), notification.getType(), notification.getReceiverId());
+        }
         if (notificationRepository == null) {
             return notification;
         }
@@ -245,6 +310,22 @@ public class NotificationService {
         payload.put("type", notification.getType());
         payload.put("fileId", notification.getFileId());
         payload.put("senderId", notification.getSenderId());
+        // include senderUsername for convenience (resolve via userRepository when possible)
+        try {
+            if (notification.getSenderId() != null && userRepository != null) {
+                var maybeSender = userRepository.findById(notification.getSenderId());
+                if (maybeSender.isPresent()) {
+                    payload.put("senderUsername", maybeSender.get().getUsername());
+                } else {
+                    var maybeByName = userRepository.findByUsername(notification.getSenderId());
+                    if (maybeByName.isPresent()) {
+                        payload.put("senderUsername", maybeByName.get().getUsername());
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            log.debug("Failed to resolve sender username for UDP notification {}: {}", notification.getId(), ex.getMessage());
+        }
         payload.put("receiverId", notification.getReceiverId());
         payload.put("message", notification.getMessage());
         payload.put("timestamp", notification.getTimestamp());
@@ -288,6 +369,21 @@ public class NotificationService {
             payload.put("type", notification.getType());
             payload.put("fileId", notification.getFileId());
             payload.put("senderId", notification.getSenderId());
+            try {
+                if (notification.getSenderId() != null && userRepository != null) {
+                    var maybeSender = userRepository.findById(notification.getSenderId());
+                    if (maybeSender.isPresent()) {
+                        payload.put("senderUsername", maybeSender.get().getUsername());
+                    } else {
+                        var maybeByName = userRepository.findByUsername(notification.getSenderId());
+                        if (maybeByName.isPresent()) {
+                            payload.put("senderUsername", maybeByName.get().getUsername());
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                log.debug("Failed to resolve sender username for debug UDP notification {}: {}", notification.getId(), ex.getMessage());
+            }
             payload.put("receiverId", notification.getReceiverId());
             payload.put("message", notification.getMessage());
             payload.put("timestamp", notification.getTimestamp());

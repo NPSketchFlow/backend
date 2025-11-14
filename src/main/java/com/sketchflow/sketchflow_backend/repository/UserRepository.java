@@ -16,4 +16,5 @@ public interface UserRepository extends MongoRepository<User, String> {
 
     // Presence query
     List<User> findByStatus(String status);
+    List<User> findByOnlineTrue();
 }
